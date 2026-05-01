@@ -22,17 +22,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-# Python
-__pycache__
-venv
-.env
-.env.local
-.env.*.local
-
-# Frontend / Node
-frontend/node_modules
-frontend/dist
-frontend/dist-ssr
-frontend/.env.local
-frontend/.env.*.local
