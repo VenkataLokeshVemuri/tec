@@ -1,0 +1,27 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+
+# LLM / RAG
+langchain
+langchain-core
+langchain-community
+langchain-google-genai
+langchain-pinecone
+langchain-text-splitters
+langchain-experimental
+
+# Vector DB
+pinecone
+
+# Graph DB
+neo4j
+
+# Document processing
+pymupdf
+pandas
+opencv-python-headless
+
+# Utilities
+python-dotenv
