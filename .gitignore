@@ -1,4 +1,4 @@
-# Logs
+# ── Logs ───────────────────────────────────────────────────────────────────
 logs
 *.log
 npm-debug.log*
@@ -7,12 +7,17 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# ── Frontend / Node ─────────────────────────────────────────────────────────
 node_modules
 dist
 dist-ssr
-*.local
+frontend/node_modules
+frontend/dist
+frontend/dist-ssr
+frontend/.env.local
+frontend/.env.*.local
 
-# Editor directories and files
+# ── Editor directories and files ────────────────────────────────────────────
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -23,16 +28,47 @@ dist-ssr
 *.sln
 *.sw?
 
-# Python
-__pycache__
-venv
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+env/
+.env/
+
+# ── Environment / Secrets ─────────────────────────────────────────────────
 .env
 .env.local
 .env.*.local
+*.env
 
-# Frontend / Node
-frontend/node_modules
-frontend/dist
-frontend/dist-ssr
-frontend/.env.local
-frontend/.env.*.local
+# ── FAISS indexes (generated — can be rebuilt by re-uploading data) ─────────
+backend/faiss_store/
+faiss_store/
+
+# ── Uploaded files (user data — not for version control) ──────────────────
+backend/uploads/
+uploads/
+
+# ── ML model caches (large, auto-downloaded by HuggingFace) ───────────────
+# Uncomment if you want to exclude the HF cache too (usually in ~/.cache)
+# .cache/
+# backend/.cache/
+
+# ── Test / temp output files ──────────────────────────────────────────────
+*.txt.bak
+test_out.txt
+uvicorn_out.txt
+test_upload.txt
+test_query.py
+
+# ── OS generated ─────────────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
