@@ -25,19 +25,15 @@ def _get_clip():
 
 def embed_image(image_path: str) -> np.ndarray:
     """Return a L2-normalised (512,) float32 CLIP image embedding."""
-    try:
-        model, processor = _get_clip()
-        image   = Image.open(image_path).convert("RGB")
-        inputs  = processor(images=image, return_tensors="pt")
+    model, processor = _get_clip()
+    image   = Image.open(image_path).convert("RGB")
+    inputs  = processor(images=image, return_tensors="pt")
 
-        with torch.no_grad():
-            feats = model.get_image_features(**inputs)
+    with torch.no_grad():
+        feats = model.get_image_features(**inputs)
 
-        vec = feats[0].cpu().numpy().astype(np.float32)
-        return _l2_normalise(vec)
-    except Exception as e:
-        print(f"[CLIP] embed_image failed for '{image_path}': {e}")
-        return np.zeros(512, dtype=np.float32)
+    vec = feats[0].cpu().numpy().astype(np.float32)
+    return _l2_normalise(vec)
 
 
 def embed_text_clip(text: str) -> np.ndarray:

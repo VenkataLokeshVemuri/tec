@@ -3,8 +3,8 @@ rag.py — Multi-Modal Graph RAG Pipeline (fully offline)
 
 Pipeline:
   Query
-    ↓ search_text(top_k=10)      [FAISS + MiniLM]
-    ↓ search_images(top_k=5)     [FAISS + CLIP]
+    ↓ search_text(top_k=10)      [Pinecone + MiniLM]
+    ↓ search_images(top_k=5)     [Pinecone + CLIP]
     ↓ rerank(top_n=3)            [CrossEncoder]
     ↓ query_graph()              [offline co-occurrence graph]
     ↓ fuse context

@@ -25,3 +25,4 @@ class FileUploadResponse(BaseModel):
     status:             str
     chunks_processed:   int
     entities_extracted: int
+    image_description:  Optional[str] = None

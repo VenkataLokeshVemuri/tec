@@ -2,6 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Loader, Database, Image, FileText } from 'lucide-react';
 import axios from 'axios';
 import { motion } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 const ChatInterface = () => {
   const [messages, setMessages] = useState([
@@ -71,8 +75,35 @@ const ChatInterface = () => {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <div style={{ marginBottom: '0.5rem', fontWeight: msg.role === 'assistant' ? 300 : 500 }}>
-                {msg.content}
+              <div style={{ marginBottom: '0.5rem', fontWeight: msg.role === 'assistant' ? 300 : 500 }} className="markdown-body">
+                {msg.role === 'assistant' ? (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      code({node, inline, className, children, ...props}) {
+                        const match = /language-(\w+)/.exec(className || '')
+                        return !inline && match ? (
+                          <SyntaxHighlighter
+                            style={vscDarkPlus}
+                            language={match[1]}
+                            PreTag="div"
+                            {...props}
+                          >
+                            {String(children).replace(/\n$/, '')}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code className={className} style={{background: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px'}} {...props}>
+                            {children}
+                          </code>
+                        )
+                      }
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                ) : (
+                  msg.content
+                )}
               </div>
 
               {/* Text sources with rerank scores */}

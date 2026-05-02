@@ -27,32 +27,35 @@ def process_pdf(filepath: str) -> list[str]:
 
 def process_image(filepath: str) -> list[str]:
     """
-    Preprocess image with OpenCV and store CLIP embedding in image FAISS index.
+    Preprocess image with OpenCV and store CLIP embedding in image Pinecone index.
     Returns a text description for the text index.
     """
     img = cv2.imread(filepath)
     if img is None:
         return [f"Image file could not be read: {filepath}"]
 
-    gray    = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)  # noqa
+    # 1. Ask Ollama Vision model (llava) to describe the image
+    from services.llm_service import describe_image
+    print(f"[Processing] Generating description for {filepath} using Vision LLM...")
+    llm_explanation = describe_image(filepath)
 
     height, width = img.shape[:2]
+    
     description = (
-        f"Image: {os.path.basename(filepath)} | "
-        f"Dimensions: {width}x{height}px | "
-        f"Preprocessed with grayscale and Gaussian blur."
+        f"Image File: {os.path.basename(filepath)}\n"
+        f"Resolution: {width}x{height}px\n\n"
+        f"Explanation:\n{llm_explanation}"
     )
 
-    # CLIP embedding → image FAISS index
+    # 2. CLIP embedding → image Pinecone index
     try:
         from services.clip_service import embed_image
         from services.vector_db   import add_image_embeddings
-        import numpy as np
 
-        embedding = embed_image(filepath)
+        embedding = embed_image(filepath)          # shape (512,)
+        embedding = embedding.reshape(1, -1)       # shape (1, 512) — required by upsert
         add_image_embeddings(
-            embeddings   = np.array([embedding]),
+            embeddings   = embedding,
             image_paths  = [filepath],
             descriptions = [description]
         )
@@ -60,7 +63,8 @@ def process_image(filepath: str) -> list[str]:
     except Exception as e:
         print(f"[Processing] CLIP embedding failed for '{filepath}': {e}")
 
-    return [description]
+    # Return the description so it gets chunked into the text index too
+    return [description], llm_explanation
 
 
 def chunk_text(text: str) -> list[str]:

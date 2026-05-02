@@ -1,184 +1,207 @@
 """
-vector_db.py — FAISS-backed dual-index vector store
+vector_db.py — Pinecone vector store
 
-Indexes:
-  text_index  – IndexFlatL2  – SentenceTransformer (MiniLM) embeddings
-  image_index – IndexFlatIP  – CLIP embeddings (cosine via inner-product on L2-normalised vecs)
+TWO separate Pinecone indexes:
+  text_index  — dimension=384, metric=cosine  (SentenceTransformer MiniLM)
+  image_index — dimension=512, metric=cosine  (CLIP openai/clip-vit-base-patch32)
 
-Metadata is kept in parallel Python lists (text_meta / image_meta) and
-persisted to disk alongside the FAISS indexes so that the store survives
-server restarts.
+Each index auto-creates on first use (ServerlessSpec, aws us-east-1).
+
+Public API:
+  add_text_embeddings(chunks, source)
+  search_text(query, top_k)                    → list[dict]
+  add_image_embeddings(embeddings, paths, desc)
+  search_images(query_embedding, top_k)        → list[dict]
+  upsert_chunks(chunks, filename)              ← backward-compat shim
 """
 
-import os
-import json
+import uuid
 import numpy as np
-import faiss
 from sentence_transformers import SentenceTransformer
+from pinecone import Pinecone, ServerlessSpec
 from core.config import settings
-
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-INDEX_DIR = settings.FAISS_INDEX_DIR
-os.makedirs(INDEX_DIR, exist_ok=True)
-
-TEXT_INDEX_PATH  = os.path.join(INDEX_DIR, "text_index.faiss")
-IMAGE_INDEX_PATH = os.path.join(INDEX_DIR, "image_index.faiss")
-TEXT_META_PATH   = os.path.join(INDEX_DIR, "text_meta.json")
-IMAGE_META_PATH  = os.path.join(INDEX_DIR, "image_meta.json")
 
 # ---------------------------------------------------------------------------
 # Embedding dimensions
 # ---------------------------------------------------------------------------
-TEXT_DIM  = 384   # all-MiniLM-L6-v2
-CLIP_DIM  = 512   # openai/clip-vit-base-patch32
+TEXT_DIM = 384    # all-MiniLM-L6-v2
+CLIP_DIM = 512    # openai/clip-vit-base-patch32
 
 # ---------------------------------------------------------------------------
-# Lazy-loaded models (initialised only when first needed)
+# Lazy singletons
 # ---------------------------------------------------------------------------
-_text_embed_model = None
+_pc: Pinecone | None = None
+_text_embed_model: SentenceTransformer | None = None
+
+
+def _get_pinecone() -> Pinecone:
+    global _pc
+    if _pc is None:
+        _pc = Pinecone(api_key=settings.PINECONE_API_KEY)
+    return _pc
+
 
 def _get_text_embed_model() -> SentenceTransformer:
     global _text_embed_model
     if _text_embed_model is None:
-        print(f"[VectorDB] Loading text embedding model: {settings.TEXT_EMBED_MODEL}")
+        print(f"[VectorDB] Loading embedding model: {settings.TEXT_EMBED_MODEL}")
         _text_embed_model = SentenceTransformer(settings.TEXT_EMBED_MODEL)
     return _text_embed_model
 
+
 # ---------------------------------------------------------------------------
-# FAISS index helpers
+# Index helpers — auto-create if absent
 # ---------------------------------------------------------------------------
-def _load_or_create_text_index() -> faiss.IndexFlatL2:
-    if os.path.exists(TEXT_INDEX_PATH):
-        return faiss.read_index(TEXT_INDEX_PATH)
-    return faiss.IndexFlatL2(TEXT_DIM)
+def _get_text_index():
+    """Return (or create) the text Pinecone index."""
+    pc         = _get_pinecone()
+    index_name = settings.PINECONE_TEXT_INDEX
+    existing   = [i.name for i in pc.list_indexes()]
 
-def _load_or_create_image_index() -> faiss.IndexFlatIP:
-    if os.path.exists(IMAGE_INDEX_PATH):
-        return faiss.read_index(IMAGE_INDEX_PATH)
-    return faiss.IndexFlatIP(CLIP_DIM)
+    if index_name not in existing:
+        print(f"[VectorDB] Creating Pinecone text index '{index_name}' (dim={TEXT_DIM})")
+        pc.create_index(
+            name      = index_name,
+            dimension = TEXT_DIM,
+            metric    = "cosine",
+            spec      = ServerlessSpec(cloud="aws", region="us-east-1")
+        )
 
-def _load_meta(path: str) -> list:
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    return pc.Index(index_name)
 
-def _save_meta(path: str, data: list):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
 
-def _persist_text(index, meta):
-    faiss.write_index(index, TEXT_INDEX_PATH)
-    _save_meta(TEXT_META_PATH, meta)
+def _get_image_index():
+    """Return (or create) the image Pinecone index."""
+    pc         = _get_pinecone()
+    index_name = settings.PINECONE_IMAGE_INDEX
+    existing   = [i.name for i in pc.list_indexes()]
 
-def _persist_image(index, meta):
-    faiss.write_index(index, IMAGE_INDEX_PATH)
-    _save_meta(IMAGE_META_PATH, meta)
+    if index_name not in existing:
+        print(f"[VectorDB] Creating Pinecone image index '{index_name}' (dim={CLIP_DIM})")
+        pc.create_index(
+            name      = index_name,
+            dimension = CLIP_DIM,
+            metric    = "cosine",
+            spec      = ServerlessSpec(cloud="aws", region="us-east-1")
+        )
+
+    return pc.Index(index_name)
+
 
 # ---------------------------------------------------------------------------
 # TEXT INDEX — add / search
 # ---------------------------------------------------------------------------
 def add_text_embeddings(chunks: list[str], source: str):
-    """Embed chunks with MiniLM and add them to the text FAISS index."""
+    """
+    Embed chunks with MiniLM and upsert into the Pinecone text index.
+    Metadata: { content, source }
+    """
     if not chunks:
         return
 
     model  = _get_text_embed_model()
-    index  = _load_or_create_text_index()
-    meta   = _load_meta(TEXT_META_PATH)
+    index  = _get_text_index()
 
-    vectors = model.encode(chunks, convert_to_numpy=True, normalize_embeddings=False)
+    vectors = model.encode(chunks, convert_to_numpy=True, normalize_embeddings=True)
     vectors = vectors.astype(np.float32)
 
-    start_id = len(meta)
-    index.add(vectors)
-
-    for i, chunk in enumerate(chunks):
-        meta.append({
-            "id":      str(start_id + i),
-            "content": chunk,
-            "source":  source
+    batch = []
+    for i, (vec, chunk) in enumerate(zip(vectors, chunks)):
+        # Pinecone metadata content limit ~40KB — truncate long chunks
+        batch.append({
+            "id":     str(uuid.uuid4()),
+            "values": vec.tolist(),
+            "metadata": {
+                "content": chunk[:2000],   # truncate for metadata limit
+                "source":  source,
+                "id":      str(i)
+            }
         })
 
-    _persist_text(index, meta)
-    print(f"[VectorDB] Added {len(chunks)} text chunks from '{source}'. Total: {index.ntotal}")
+    # Upsert in batches of 100 (Pinecone recommendation)
+    for i in range(0, len(batch), 100):
+        index.upsert(vectors=batch[i:i + 100])
+
+    print(f"[VectorDB] Upserted {len(chunks)} text chunks from '{source}' → Pinecone '{settings.PINECONE_TEXT_INDEX}'")
 
 
 def search_text(query: str, top_k: int = 10) -> list[dict]:
-    """Return top-K text chunks most similar to query."""
-    index = _load_or_create_text_index()
-    meta  = _load_meta(TEXT_META_PATH)
+    """Query the text Pinecone index, returns list of dicts with content/source/score."""
+    model  = _get_text_embed_model()
+    index  = _get_text_index()
 
-    if index.ntotal == 0:
-        return []
+    q_vec = model.encode([query], convert_to_numpy=True, normalize_embeddings=True)[0].tolist()
 
-    model = _get_text_embed_model()
-    q_vec = model.encode([query], convert_to_numpy=True).astype(np.float32)
+    result  = index.query(vector=q_vec, top_k=top_k, include_metadata=True)
+    matches = result.get("matches", [])
 
-    k      = min(top_k, index.ntotal)
-    dists, ids = index.search(q_vec, k)
-
-    results = []
-    for dist, idx in zip(dists[0], ids[0]):
-        if idx == -1:
-            continue
-        entry = meta[idx].copy()
-        entry["score"] = float(dist)
-        results.append(entry)
-    return results
+    return [
+        {
+            "id":      m["id"],
+            "content": m["metadata"].get("content", ""),
+            "source":  m["metadata"].get("source", "unknown"),
+            "score":   m["score"]
+        }
+        for m in matches
+    ]
 
 
 # ---------------------------------------------------------------------------
 # IMAGE INDEX — add / search
 # ---------------------------------------------------------------------------
 def add_image_embeddings(embeddings: np.ndarray, image_paths: list[str], descriptions: list[str]):
-    """Add pre-computed CLIP image embeddings to the image FAISS index."""
+    """
+    Upsert pre-computed CLIP image embeddings into the Pinecone image index.
+    embeddings: (N, 512) float32, already L2-normalised.
+    """
     if embeddings is None or len(embeddings) == 0:
         return
 
-    index = _load_or_create_image_index()
-    meta  = _load_meta(IMAGE_META_PATH)
+    index = _get_image_index()
+    vecs  = embeddings.astype(np.float32)
 
-    vecs = embeddings.astype(np.float32)
-    faiss.normalize_L2(vecs)
-    start_id = len(meta)
-    index.add(vecs)
+    # Normalise just in case
+    norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+    vecs  = vecs / np.where(norms > 1e-9, norms, 1.0)
 
-    for i, (path, desc) in enumerate(zip(image_paths, descriptions)):
-        meta.append({
-            "id":          str(start_id + i),
-            "file_path":   path,
-            "description": desc
-        })
+    batch = [
+        {
+            "id":     str(uuid.uuid4()),
+            "values": vec.tolist(),
+            "metadata": {
+                "file_path":   path,
+                "description": desc[:1000]
+            }
+        }
+        for vec, path, desc in zip(vecs, image_paths, descriptions)
+    ]
 
-    _persist_image(index, meta)
-    print(f"[VectorDB] Added {len(image_paths)} image embeddings. Total: {index.ntotal}")
+    for i in range(0, len(batch), 100):
+        index.upsert(vectors=batch[i:i + 100])
+
+    print(f"[VectorDB] Upserted {len(image_paths)} image embeddings → Pinecone '{settings.PINECONE_IMAGE_INDEX}'")
 
 
 def search_images(query_embedding: np.ndarray, top_k: int = 5) -> list[dict]:
-    """Retrieve most similar images given a CLIP query embedding."""
-    index = _load_or_create_image_index()
-    meta  = _load_meta(IMAGE_META_PATH)
+    """Query the image Pinecone index using a CLIP embedding."""
+    index = _get_image_index()
 
-    if index.ntotal == 0:
-        return []
+    vec  = query_embedding.flatten().astype(np.float32)
+    norm = np.linalg.norm(vec)
+    vec  = (vec / norm).tolist() if norm > 1e-9 else vec.tolist()
 
-    q_vec = query_embedding.reshape(1, -1).astype(np.float32)
-    faiss.normalize_L2(q_vec)
+    result  = index.query(vector=vec, top_k=top_k, include_metadata=True)
+    matches = result.get("matches", [])
 
-    k      = min(top_k, index.ntotal)
-    scores, ids = index.search(q_vec, k)
-
-    results = []
-    for score, idx in zip(scores[0], ids[0]):
-        if idx == -1:
-            continue
-        entry = meta[idx].copy()
-        entry["score"] = float(score)
-        results.append(entry)
-    return results
+    return [
+        {
+            "id":          m["id"],
+            "file_path":   m["metadata"].get("file_path", ""),
+            "description": m["metadata"].get("description", ""),
+            "score":       m["score"]
+        }
+        for m in matches
+    ]
 
 
 # ---------------------------------------------------------------------------

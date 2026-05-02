@@ -24,7 +24,7 @@ from core.config import settings
 # ---------------------------------------------------------------------------
 # JSON fallback store (used when Neo4j is disabled or unreachable)
 # ---------------------------------------------------------------------------
-GRAPH_DIR  = settings.FAISS_INDEX_DIR
+GRAPH_DIR  = settings.LOCAL_STORE_DIR
 os.makedirs(GRAPH_DIR, exist_ok=True)
 GRAPH_PATH = os.path.join(GRAPH_DIR, "graph_store.json")
 

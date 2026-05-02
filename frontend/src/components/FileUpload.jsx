@@ -23,15 +23,20 @@ const FileUpload = () => {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       
+      const data = res.data;
+      let message = `✅ Processed ${data.chunks_processed} chunk(s) · ${data.entities_extracted} graph entities.`;
+      
       setStatus({ 
         type: 'success', 
-        message: `Success! Extracted ${res.data.chunks_processed} chunks and ${res.data.entities_extracted} graph entities.` 
+        message,
+        imageDescription: data.image_description || null
       });
     } catch (err) {
       console.error(err);
       setStatus({ 
         type: 'error', 
-        message: err.response?.data?.detail || 'An error occurred during upload.' 
+        message: err.response?.data?.detail || 'An error occurred during upload.',
+        imageDescription: null
       });
     } finally {
       setIsLoading(false);
@@ -90,6 +95,28 @@ const FileUpload = () => {
             {status.type === 'error' ? <AlertCircle size={16} /> : <CheckCircle size={16} />}
             <span>{status.message}</span>
           </div>
+        </motion.div>
+      )}
+
+      {status.imageDescription && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{
+            marginTop: '1rem',
+            padding: '1rem',
+            borderRadius: '10px',
+            background: 'rgba(99, 102, 241, 0.08)',
+            border: '1px solid rgba(99, 102, 241, 0.25)',
+            fontSize: '0.9rem',
+            lineHeight: '1.6',
+            color: 'var(--text-primary)'
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: 'var(--primary-color)' }}>
+            🖼️ Image Analysis
+          </div>
+          {status.imageDescription}
         </motion.div>
       )}
     </div>

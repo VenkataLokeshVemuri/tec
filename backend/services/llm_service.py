@@ -43,3 +43,49 @@ def ask_llm(context: str, query: str) -> str:
         )
     except Exception as e:
         return f"⚠️  LLM error: {e}"
+
+
+def describe_image(filepath: str) -> str:
+    """
+    Send image to local Ollama vision model (llava) to generate a detailed description.
+    """
+    import base64
+
+    try:
+        with open(filepath, "rb") as f:
+            b64_image = base64.b64encode(f.read()).decode("utf-8")
+    except Exception as e:
+        return f"Error reading image file: {e}"
+
+    prompt = "Please describe this image in detail, including all objects, colors, and text visible."
+
+    payload = {
+        "model":  settings.OLLAMA_VISION_MODEL,
+        "prompt": prompt,
+        "images": [b64_image],
+        "stream": False,
+        "options": {
+            "num_predict": 256,
+            "temperature": 0.1
+        }
+    }
+
+    try:
+        url  = f"{settings.OLLAMA_BASE_URL}/api/generate"
+        resp = requests.post(url, json=payload, timeout=300)
+        resp.raise_for_status()
+        return resp.json().get("response", "").strip()
+    except requests.exceptions.ConnectionError:
+        return (
+            "⚠️ Ollama is not running. Start it and pull the vision model: "
+            f"`ollama pull {settings.OLLAMA_VISION_MODEL}`"
+        )
+    except requests.exceptions.HTTPError as e:
+        if resp.status_code == 404:
+            return (
+                f"⚠️ Vision model '{settings.OLLAMA_VISION_MODEL}' not found. "
+                f"Please run: `ollama pull {settings.OLLAMA_VISION_MODEL}`"
+            )
+        return f"⚠️ Vision LLM error: {e}"
+    except Exception as e:
+        return f"⚠️ Vision LLM error: {e}"

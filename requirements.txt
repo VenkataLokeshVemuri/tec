@@ -13,9 +13,8 @@ Pillow
 # Text Splitting
 langchain-text-splitters
 
-# Vector Database (FAISS - offline)
-faiss-cpu
-numpy
+# Vector Database (Pinecone - cloud)
+pinecone
 
 # Embeddings
 sentence-transformers

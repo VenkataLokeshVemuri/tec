@@ -7,7 +7,7 @@ function App() {
     <div className="app-container">
       <header className="header">
         <h1>Graph RAG Nexus</h1>
-        <p>Multi-Modal · FAISS · Reranker · Phi-3 Mini (Ollama) · Fully Offline</p>
+        <p>Multi-Modal · Pinecone · Reranker · Phi-3 Mini (Ollama) · Fully Offline</p>
       </header>
 
       <main style={{ display: 'contents' }}>
@@ -18,8 +18,8 @@ function App() {
             <h3 style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>System Status</h3>
             <ul style={{ listStyle: 'none', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <li style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Vector DB (FAISS):</span>
-                <span style={{ color: 'var(--success-color)' }}>Offline ✓</span>
+                <span>Vector DB (Pinecone):</span>
+                <span style={{ color: 'var(--success-color)' }}>Cloud ✓</span>
               </li>
               <li style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Graph DB (Neo4j):</span>
